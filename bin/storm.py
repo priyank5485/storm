@@ -143,7 +143,6 @@ def confvalue(name, extrapaths, daemon=True):
 
 def print_localconfvalue(name):
     """Syntax: [storm localconfvalue conf-name]
-
     Prints out the value for conf-name in the local Storm configs.
     The local Storm configs are the ones in ~/.storm/storm.yaml merged
     in with the configs in defaults.yaml.
@@ -152,11 +151,9 @@ def print_localconfvalue(name):
 
 def print_remoteconfvalue(name):
     """Syntax: [storm remoteconfvalue conf-name]
-
     Prints out the value for conf-name in the cluster's Storm configs.
     The cluster's Storm configs are the ones in $STORM-PATH/conf/storm.yaml
     merged in with the configs in defaults.yaml.
-
     This command must be run on a cluster machine.
     """
     print(name + ": " + confvalue(name, [CLUSTER_CONF_DIR]))
@@ -165,7 +162,6 @@ def parse_args(string):
     r"""Takes a string of whitespace-separated tokens and parses it into a list.
     Whitespace inside tokens may be quoted with single quotes, double quotes or
     backslash (similar to command-line arguments in bash).
-
     >>> parse_args(r'''"a a" 'b b' c\ c "d'd" 'e"e' 'f\'f' "g\"g" "i""i" 'j''j' k" "k l' l' mm n\\n''')
     ['a a', 'b b', 'c c', "d'd", 'e"e', "f'f", 'g"g', 'ii', 'jj', 'k k', 'l l', 'mm', r'n\n']
     """
@@ -206,7 +202,6 @@ def exec_storm_class(klass, jvmtype="-server", jvmopts=[], extrajars=[], args=[]
 
 def jar(jarfile, klass, *args):
     """Syntax: [storm jar topology-jar-path class ...]
-
     Runs the main method of class with the specified arguments.
     The storm jars and configs in ~/.storm are put on the classpath.
     The process is configured so that StormSubmitter
@@ -223,7 +218,6 @@ def jar(jarfile, klass, *args):
 
 def kill(*args):
     """Syntax: [storm kill topology-name [-w wait-time-secs]]
-
     Kills the topology with the name topology-name. Storm will
     first deactivate the topology's spouts for the duration of
     the topology's message timeout to allow all messages currently
@@ -243,7 +237,6 @@ def kill(*args):
 
 def upload_credentials(*args):
     """Syntax: [storm upload_credentials topology-name [credkey credvalue]*]
-
     Uploads a new set of credentials to a running topology
     """
     if not args:
@@ -257,7 +250,6 @@ def upload_credentials(*args):
 
 def activate(*args):
     """Syntax: [storm activate topology-name]
-
     Activates the specified topology's spouts.
     """
     if not args:
@@ -271,7 +263,6 @@ def activate(*args):
 
 def listtopos(*args):
     """Syntax: [storm list]
-
     List the running topologies and their statuses.
     """
     exec_storm_class(
@@ -282,7 +273,6 @@ def listtopos(*args):
 
 def deactivate(*args):
     """Syntax: [storm deactivate topology-name]
-
     Deactivates the specified topology's spouts.
     """
     if not args:
@@ -296,7 +286,6 @@ def deactivate(*args):
 
 def rebalance(*args):
     """Syntax: [storm rebalance topology-name [-w wait-time-secs] [-n new-num-workers] [-e component=parallelism]*]
-
     Sometimes you may wish to spread out where the workers for a topology
     are running. For example, let's say you have a 10 node cluster running
     4 workers per node, and then let's say you add another 10 nodes to
@@ -304,13 +293,11 @@ def rebalance(*args):
     running topology so that each node runs 2 workers. One way to do this
     is to kill the topology and resubmit it, but Storm provides a "rebalance"
     command that provides an easier way to do this.
-
     Rebalance will first deactivate the topology for the duration of the
     message timeout (overridable with the -w flag) and then redistribute
     the workers evenly around the cluster. The topology will then return to
     its previous state of activation (so a deactivated topology will still
     be deactivated and an activated topology will go back to being activated).
-
     The rebalance command can also be used to change the parallelism of a running topology.
     Use the -n and -e switches to change the number of workers or number of executors of a component
     respectively.
@@ -326,7 +313,6 @@ def rebalance(*args):
 
 def get_errors(*args):
     """Syntax: [storm get-errors topology-name]
-
     Get the latest error from the running topology. The returned result contains
     the key value pairs for component-name and component-error for the components in error.
     The result is returned in json format.
@@ -355,7 +341,6 @@ def shell(resourcesdir, command, *args):
 
 def repl():
     """Syntax: [storm repl]
-
     Opens up a Clojure REPL with the storm jars and configuration
     on the classpath. Useful for debugging.
     """
@@ -371,10 +356,8 @@ def get_log4j_conf_dir():
 
 def nimbus(klass="backtype.storm.daemon.nimbus"):
     """Syntax: [storm nimbus]
-
     Launches the nimbus daemon. This command should be run under
     supervision with a tool like daemontools or monit.
-
     See Setting up a Storm cluster for more information.
     (http://storm.incubator.apache.org/documentation/Setting-up-a-Storm-cluster)
     """
@@ -392,10 +375,8 @@ def nimbus(klass="backtype.storm.daemon.nimbus"):
 
 def supervisor(klass="backtype.storm.daemon.supervisor"):
     """Syntax: [storm supervisor]
-
     Launches the supervisor daemon. This command should be run
     under supervision with a tool like daemontools or monit.
-
     See Setting up a Storm cluster for more information.
     (http://storm.incubator.apache.org/documentation/Setting-up-a-Storm-cluster)
     """
@@ -413,11 +394,9 @@ def supervisor(klass="backtype.storm.daemon.supervisor"):
 
 def ui():
     """Syntax: [storm ui]
-
     Launches the UI daemon. The UI provides a web interface for a Storm
     cluster and shows detailed stats about running topologies. This command
     should be run under supervision with a tool like daemontools or monit.
-
     See Setting up a Storm cluster for more information.
     (http://storm.incubator.apache.org/documentation/Setting-up-a-Storm-cluster)
     """
@@ -435,11 +414,9 @@ def ui():
 
 def logviewer():
     """Syntax: [storm logviewer]
-
     Launches the log viewer daemon. It provides a web interface for viewing
     storm log files. This command should be run under supervision with a
     tool like daemontools or monit.
-
     See Setting up a Storm cluster for more information.
     (http://storm.incubator.apache.org/documentation/Setting-up-a-Storm-cluster)
     """
@@ -457,10 +434,8 @@ def logviewer():
 
 def drpc():
     """Syntax: [storm drpc]
-
     Launches a DRPC daemon. This command should be run under supervision
     with a tool like daemontools or monit.
-
     See Distributed RPC for more information.
     (http://storm.incubator.apache.org/documentation/Distributed-RPC)
     """
@@ -478,7 +453,6 @@ def drpc():
 
 def dev_zookeeper():
     """Syntax: [storm dev-zookeeper]
-
     Launches a fresh Zookeeper server using "dev.zookeeper.path" as its local dir and
     "storm.zookeeper.port" as its port. This is only intended for development/testing, the
     Zookeeper instance launched is not configured to be used in production.
@@ -491,7 +465,6 @@ def dev_zookeeper():
 
 def version():
   """Syntax: [storm version]
-
   Prints the version number of this Storm release.
   """
   cppaths = [CLUSTER_CONF_DIR]
@@ -502,14 +475,12 @@ def version():
 
 def print_classpath():
     """Syntax: [storm classpath]
-
     Prints the classpath used by the storm client when running commands.
     """
     print(get_classpath([]))
 
 def monitor(*args):
     """Syntax: [storm monitor topology-name [-i interval-secs] [-m component-id] [-s stream-id] [-w [emitted | transferred]]]
-
     Monitor given topology's throughput interactively.
     One can specify poll-interval, component-id, stream-id, watch-item[emitted | transferred]
     By default,
@@ -592,3 +563,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
