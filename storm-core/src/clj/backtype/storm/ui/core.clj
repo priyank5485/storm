@@ -27,7 +27,7 @@
                                               ACKER-FAIL-STREAM-ID mk-authorization-handler]]])
   (:use [clojure.string :only [blank? lower-case trim]])
   (:import [backtype.storm.utils Utils]
-           [backtype.storm.generated NimbusSummary])
+           [backtype.storm.generated NimbusSummary NotAliveException])
   (:import [backtype.storm.generated ExecutorSpecificStats
             ExecutorStats ExecutorSummary ExecutorInfo TopologyInfo SpoutStats BoltStats
             ErrorInfo ClusterSummary SupervisorSummary TopologySummary
@@ -191,7 +191,7 @@
                          [(sanitize-stream-name stream), trans]))])))
 
 (defn visualization-data
-  [spout-bolt spout-comp-summs bolt-comp-summs window storm-id]
+  [spout-bolt spout-comp-summs bolt-comp-summs window topology-name]
   (let [components (for [[id spec] spout-bolt]
             [id
              (let [inputs (.get_inputs (.get_common spec))
@@ -227,7 +227,7 @@
                          (if bolt-summs
                            (mapfn bolt-summs)
                            (mapfn spout-summs)))
-                :link (url-format "/component.html?id=%s&topology_id=%s" id storm-id)
+                :link (url-format "/component.html?id=%s&topology_name=%s" id topology-name)
                 :inputs (for [[global-stream-id group] inputs]
                           {:component (.get_componentId global-stream-id)
                            :stream (.get_streamId global-stream-id)
@@ -249,7 +249,7 @@
            {:row row}) (partition 4 4 nil streams))))
 
 (defn mk-visualization-data
-  [id window include-sys?]
+  [id name window include-sys?]
   (thrift/with-configured-nimbus-connection
     nimbus
     (let [window (if window window ":all-time")
@@ -270,7 +270,7 @@
       (visualization-data
        (merge (hashmap-to-persistent spouts)
               (hashmap-to-persistent bolts))
-       spout-comp-summs bolt-comp-summs window id))))
+       spout-comp-summs bolt-comp-summs window name))))
 
 (defn validate-tplg-submit-params [params]
   (let [tplg-jar-file (params :topologyJar)
@@ -417,6 +417,14 @@
        "assignedTotalMem" (+ (.get_assigned_memonheap t) (.get_assigned_memoffheap t))
        "assignedCpu" (.get_assigned_cpu t)})}))
 
+(defn get-id-from-name [topology-name]
+  (let [summary ((all-topologies-summary) "topologies")
+        filter-fun (fn[topo-summary] (= (topo-summary "name") topology-name))
+        matching-topologies (filter filter-fun summary)
+        _ (when (empty? matching-topologies) (throw (NotAliveException. (str topology-name " is not alive"))))
+        id ((first matching-topologies) "id")]
+    id))
+
 (defn topology-stats [window stats]
   (let [times (stats-times (:emitted stats))
         display-map (into {} (for [t times] [t pretty-uptime-sec]))
@@ -431,7 +439,7 @@
        "acked" (get-in stats [:acked w])
        "failed" (get-in stats [:failed w])})))
 
-(defn build-visualization [id window include-sys?]
+(defn build-visualization [id name window include-sys?]
   (thrift/with-configured-nimbus-connection nimbus
     (let [window (if window window ":all-time")
           topology-info (->> (doto
@@ -452,7 +460,7 @@
                                               spout-comp-id->executor-summaries
                                               bolt-comp-id->executor-summaries
                                               window
-                                              id)]
+                                              name)]
        {"visualizationTable" (stream-boxes visualizer-data)})))
 
 (defn- get-error-json
@@ -851,141 +859,151 @@
     (populate-context! servlet-request)
     (assert-authorized-user "getClusterInfo")
     (json-response (all-topologies-summary) (:callback m)))
-  (GET "/api/v1/topology/:id" [:as {:keys [cookies servlet-request scheme]} id & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "getTopology" (topology-config id))
-    (let [user (get-user-name servlet-request)]
-      (json-response (topology-page id (:window m) (check-include-sys? (:sys m)) user (= scheme :https)) (:callback m))))
-  (GET "/api/v1/topology/:id/visualization-init" [:as {:keys [cookies servlet-request]} id & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "getTopology" (topology-config id))
-    (json-response (build-visualization id (:window m) (check-include-sys? (:sys m))) (:callback m)))
-  (GET "/api/v1/topology/:id/visualization" [:as {:keys [cookies servlet-request]} id & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "getTopology" (topology-config id))
-    (json-response (mk-visualization-data id (:window m) (check-include-sys? (:sys m))) (:callback m)))
-  (GET "/api/v1/topology/:id/component/:component" [:as {:keys [cookies servlet-request scheme]} id component & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "getTopology" (topology-config id))
-    (let [user (get-user-name servlet-request)]
-      (json-response
-          (component-page id component (:window m) (check-include-sys? (:sys m)) user (= scheme :https))
-          (:callback m))))
-  (GET "/api/v1/topology/:id/logconfig" [:as {:keys [cookies servlet-request]} id & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "getTopology" (topology-config id))
-       (json-response (log-config id) (:callback m)))
-  (POST "/api/v1/topology/:id/activate" [:as {:keys [cookies servlet-request]} id & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "activate" (topology-config id))
-    (thrift/with-configured-nimbus-connection nimbus
-       (let [tplg (->> (doto
-                        (GetInfoOptions.)
-                        (.set_num_err_choice NumErrorsChoice/NONE))
-                      (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
-            name (.get_name tplg)]
-        (.activate nimbus name)
-        (log-message "Activating topology '" name "'")))
-    (json-response (topology-op-response id "activate") (m "callback")))
-  (POST "/api/v1/topology/:id/deactivate" [:as {:keys [cookies servlet-request]} id & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "deactivate" (topology-config id))
-    (thrift/with-configured-nimbus-connection nimbus
+  (GET "/api/v1/topology/:name" [:as {:keys [cookies servlet-request scheme]} name & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "getTopology" (topology-config id))
+      (let [user (get-user-name servlet-request)]
+        (json-response (topology-page id (:window m) (check-include-sys? (:sys m)) user (= scheme :https)) (:callback m)))))
+  (GET "/api/v1/topology/:name/visualization-init" [:as {:keys [cookies servlet-request]} name & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "getTopology" (topology-config id))
+      (json-response (build-visualization id name (:window m) (check-include-sys? (:sys m))) (:callback m))))
+  (GET "/api/v1/topology/:name/visualization" [:as {:keys [cookies servlet-request]} name & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "getTopology" (topology-config id))
+      (json-response (mk-visualization-data id name (:window m) (check-include-sys? (:sys m))) (:callback m))))
+  (GET "/api/v1/topology/:name/component/:component" [:as {:keys [cookies servlet-request scheme]} name component & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "getTopology" (topology-config id))
+      (let [user (get-user-name servlet-request)]
+        (json-response (component-page id component (:window m) (check-include-sys? (:sys m)) user (= scheme :https)) (:callback m)))))
+  (GET "/api/v1/topology/:name/logconfig" [:as {:keys [cookies servlet-request]} name & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "getTopology" (topology-config id))
+         (json-response (log-config id) (:callback m))))
+  (POST "/api/v1/topology/:name/activate" [:as {:keys [cookies servlet-request]} name & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "activate" (topology-config id))
+      (thrift/with-configured-nimbus-connection nimbus
         (let [tplg (->> (doto
-                        (GetInfoOptions.)
-                        (.set_num_err_choice NumErrorsChoice/NONE))
-                      (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
-            name (.get_name tplg)]
-        (.deactivate nimbus name)
-        (log-message "Deactivating topology '" name "'")))
-    (json-response (topology-op-response id "deactivate") (m "callback")))
-  (POST "/api/v1/topology/:id/debug/:action/:spct" [:as {:keys [cookies servlet-request]} id action spct & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "debug" (topology-config id))
-    (thrift/with-configured-nimbus-connection nimbus
+                          (GetInfoOptions.)
+                          (.set_num_err_choice NumErrorsChoice/NONE))
+                        (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
+              name (.get_name tplg)]
+          (.activate nimbus name)
+          (log-message "Activating topology '" name "'")))
+      (json-response (topology-op-response id "activate") (m "callback"))))
+  (POST "/api/v1/topology/:name/deactivate" [:as {:keys [cookies servlet-request]} name & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "deactivate" (topology-config id))
+      (thrift/with-configured-nimbus-connection nimbus
+          (let [tplg (->> (doto
+                          (GetInfoOptions.)
+                          (.set_num_err_choice NumErrorsChoice/NONE))
+                        (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
+              name (.get_name tplg)]
+          (.deactivate nimbus name)
+          (log-message "Deactivating topology '" name "'")))
+      (json-response (topology-op-response id "deactivate") (m "callback"))))
+  (POST "/api/v1/topology/:name/debug/:action/:spct" [:as {:keys [cookies servlet-request]} name action spct & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "debug" (topology-config id))
+      (thrift/with-configured-nimbus-connection nimbus
+          (let [tplg (->> (doto
+                          (GetInfoOptions.)
+                          (.set_num_err_choice NumErrorsChoice/NONE))
+                     (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
+              name (.get_name tplg)
+              enable? (= "enable" action)]
+          (.debug nimbus name "" enable? (Integer/parseInt spct))
+          (log-message "Debug topology [" name "] action [" action "] sampling pct [" spct "]")))
+       (json-response (topology-op-response id (str "debug/" action)) (m "callback"))))
+  (POST "/api/v1/topology/:name/component/:component/debug/:action/:spct" [:as {:keys [cookies servlet-request]} name component action spct & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "debug" (topology-config id))
+      (thrift/with-configured-nimbus-connection nimbus
         (let [tplg (->> (doto
-                        (GetInfoOptions.)
-                        (.set_num_err_choice NumErrorsChoice/NONE))
-                   (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
-            name (.get_name tplg)
-            enable? (= "enable" action)]
-        (.debug nimbus name "" enable? (Integer/parseInt spct))
-        (log-message "Debug topology [" name "] action [" action "] sampling pct [" spct "]")))
-     (json-response (topology-op-response id (str "debug/" action)) (m "callback")))
-  (POST "/api/v1/topology/:id/component/:component/debug/:action/:spct" [:as {:keys [cookies servlet-request]} id component action spct & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "debug" (topology-config id))
-    (thrift/with-configured-nimbus-connection nimbus
-      (let [tplg (->> (doto
-                        (GetInfoOptions.)
-                        (.set_num_err_choice NumErrorsChoice/NONE))
-                   (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
-            name (.get_name tplg)
-            enable? (= "enable" action)]
-        (.debug nimbus name component enable? (Integer/parseInt spct))
-        (log-message "Debug topology [" name "] component [" component "] action [" action "] sampling pct [" spct "]")))
-    (json-response (component-op-response id component (str "/debug/" action)) (m "callback")))
-  (POST "/api/v1/topology/:id/rebalance/:wait-time" [:as {:keys [cookies servlet-request]} id wait-time & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "rebalance" (topology-config id))
-    (thrift/with-configured-nimbus-connection nimbus
-      (let [tplg (->> (doto
-                        (GetInfoOptions.)
-                        (.set_num_err_choice NumErrorsChoice/NONE))
-                      (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
-            name (.get_name tplg)
-            rebalance-options (m "rebalanceOptions")
-            options (RebalanceOptions.)]
-        (.set_wait_secs options (Integer/parseInt wait-time))
-        (if (and (not-nil? rebalance-options) (contains? rebalance-options "numWorkers"))
-          (.set_num_workers options (Integer/parseInt (.toString (rebalance-options "numWorkers")))))
-        (if (and (not-nil? rebalance-options) (contains? rebalance-options "executors"))
-          (doseq [keyval (rebalance-options "executors")]
-            (.put_to_num_executors options (key keyval) (Integer/parseInt (.toString (val keyval))))))
-        (.rebalance nimbus name options)
-        (log-message "Rebalancing topology '" name "' with wait time: " wait-time " secs")))
-    (json-response (topology-op-response id "rebalance") (m "callback")))
-  (POST "/api/v1/topology/:id/kill/:wait-time" [:as {:keys [cookies servlet-request]} id wait-time & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "killTopology" (topology-config id))
-    (thrift/with-configured-nimbus-connection nimbus
-      (let [tplg (->> (doto
-                        (GetInfoOptions.)
-                        (.set_num_err_choice NumErrorsChoice/NONE))
-                      (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
-            name (.get_name tplg)
-            options (KillOptions.)]
-        (.set_wait_secs options (Integer/parseInt wait-time))
-        (.killTopologyWithOpts nimbus name options)
-        (log-message "Killing topology '" name "' with wait time: " wait-time " secs")))
-    (json-response (topology-op-response id "kill") (m "callback")))
-  (POST "/api/v1/topology/:id/logconfig" [:as {:keys [cookies servlet-request]} id namedLoggerLevels & m]
-    (populate-context! servlet-request)
-    (assert-authorized-user "setLogConfig" (topology-config id))
-    (thrift/with-configured-nimbus-connection
-      nimbus
-      (let [new-log-config (LogConfig.)]
-        (doseq [[key level] namedLoggerLevels]
-            (let [logger-name (str key)
-                  target-level (.get level "target_level")
-                  timeout (or (.get level "timeout") 0)
-                  named-logger-level (LogLevel.)]
-              ;; if target-level is nil, do not set it, user wants to clear
-              (log-message "The target level for " logger-name " is " target-level)
-              (if (nil? target-level)
-                (do
-                  (.set_action named-logger-level LogLevelAction/REMOVE)
-                  (.unset_target_log_level named-logger-level))
-                (do
-                  (.set_action named-logger-level LogLevelAction/UPDATE)
-                  ;; the toLevel here ensures the string we get is valid
-                  (.set_target_log_level named-logger-level (.name (Level/toLevel target-level)))
-                  (.set_reset_log_level_timeout_secs named-logger-level timeout)))
-              (log-message "Adding this " logger-name " " named-logger-level " to " new-log-config)
-              (.put_to_named_logger_level new-log-config logger-name named-logger-level)))
-        (log-message "Setting topology " id " log config " new-log-config)
-        (.setLogConfig nimbus id new-log-config)
-        (json-response (log-config id) (m "callback")))))
+                          (GetInfoOptions.)
+                          (.set_num_err_choice NumErrorsChoice/NONE))
+                     (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
+              name (.get_name tplg)
+              enable? (= "enable" action)]
+          (.debug nimbus name component enable? (Integer/parseInt spct))
+          (log-message "Debug topology [" name "] component [" component "] action [" action "] sampling pct [" spct "]")))
+      (json-response (component-op-response id component (str "/debug/" action) ) (m "callback"))))
+  (POST "/api/v1/topology/:name/rebalance/:wait-time" [:as {:keys [cookies servlet-request]} name wait-time & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "rebalance" (topology-config id))
+      (thrift/with-configured-nimbus-connection nimbus
+        (let [tplg (->> (doto
+                          (GetInfoOptions.)
+                          (.set_num_err_choice NumErrorsChoice/NONE))
+                        (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
+              name (.get_name tplg)
+              rebalance-options (m "rebalanceOptions")
+              options (RebalanceOptions.)]
+          (.set_wait_secs options (Integer/parseInt wait-time))
+          (if (and (not-nil? rebalance-options) (contains? rebalance-options "numWorkers"))
+            (.set_num_workers options (Integer/parseInt (.toString (rebalance-options "numWorkers")))))
+          (if (and (not-nil? rebalance-options) (contains? rebalance-options "executors"))
+            (doseq [keyval (rebalance-options "executors")]
+              (.put_to_num_executors options (key keyval) (Integer/parseInt ( .toString (val keyval))))))
+          (.rebalance nimbus name options)
+          (log-message "Rebalancing topology '" name "' with wait time: " wait-time " secs")))
+      (json-response (topology-op-response id "rebalance") (m "callback"))))
+  (POST "/api/v1/topology/:name/kill/:wait-time" [:as {:keys [cookies servlet-request]} name wait-time & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "killTopology" (topology-config id))
+      (thrift/with-configured-nimbus-connection nimbus
+        (let [tplg (->> (doto
+                          (GetInfoOptions.)
+                          (.set_num_err_choice NumErrorsChoice/NONE))
+                        (.getTopologyInfoWithOpts ^Nimbus$Client nimbus id))
+              name (.get_name tplg)
+              options (KillOptions.)]
+          (.set_wait_secs options (Integer/parseInt wait-time))
+          (.killTopologyWithOpts nimbus name options)
+          (log-message "Killing topology '" name "' with wait time: " wait-time " secs")))
+      (json-response (topology-op-response id "kill") (m "callback"))))
+  (POST "/api/v1/topology/:name/logconfig" [:as {:keys [cookies servlet-request]} name namedLoggerLevels & m]
+    (let [id (get-id-from-name name)]
+      (populate-context! servlet-request)
+      (assert-authorized-user "setLogConfig" (topology-config id))
+      (thrift/with-configured-nimbus-connection
+        nimbus
+        (let [new-log-config (LogConfig.)]
+          (doseq [[key level] namedLoggerLevels]
+              (let [logger-name (str key)
+                    target-level (.get level "target_level")
+                    timeout (or (.get level "timeout") 0)
+                    named-logger-level (LogLevel.)]
+                ;; if target-level is nil, do not set it, user wants to clear
+                (log-message "The target level for " logger-name " is " target-level)
+                (if (nil? target-level)
+                  (do
+                    (.set_action named-logger-level LogLevelAction/REMOVE)
+                    (.unset_target_log_level named-logger-level))
+                  (do
+                    (.set_action named-logger-level LogLevelAction/UPDATE)
+                    ;; the toLevel here ensures the string we get is valid
+                    (.set_target_log_level named-logger-level (.name (Level/toLevel target-level)))
+                    (.set_reset_log_level_timeout_secs named-logger-level timeout)))
+                (log-message "Adding this " logger-name " " named-logger-level " to " new-log-config)
+                (.put_to_named_logger_level new-log-config logger-name named-logger-level)))
+          (log-message "Setting topology " id " log config " new-log-config)
+          (.setLogConfig nimbus id new-log-config)
+          (json-response (log-config id) (m "callback"))))))
   (GET "/" [:as {cookies :cookies}]
     (resp/redirect "/index.html"))
   (route/resources "/")

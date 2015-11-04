@@ -78,11 +78,11 @@ $(document).ajaxStart(function(){
 });
 $(document).ready(function() {
     var componentId = $.url("?id");
-    var topologyId = $.url("?topology_id");
-    var tableStateKey = ":".concat(topologyId, ":", componentId);
+    var topologyName = $.url("?topology_name");
+    var tableStateKey = ":".concat(topologyName, ":", componentId);
     var window = $.url("?window");
     var sys = $.cookies.get("sys") || "false";
-    var url = "/api/v1/topology/"+topologyId+"/component/"+componentId+"?sys="+sys;
+    var url = "/api/v1/topology/"+topologyName+"/component/"+componentId+"?sys="+sys;
     if(window) url += "&window="+window;
 
     $.extend( $.fn.dataTable.defaults, {
@@ -116,7 +116,7 @@ $(document).ready(function() {
 
         var componentSummary = $("#component-summary");
         var componentActions = $("#component-actions");
-        var buttonJsonData = componentActionJson(response["encodedTopologyId"], response["encodedId"], response["id"],
+        var buttonJsonData = componentActionJson(response["name"], response["encodedId"], response["id"],
                                                  response["topologyStatus"], response["debug"], response["samplingPct"]);
         var componentStatsDetail = $("#component-stats-detail")
         var inputStats = $("#component-input-stats");

@@ -41,8 +41,8 @@ are used by nimbus.
 Examples:
 
 ```no-highlight
- 1. http://ui-daemon-host-name:8080/api/v1/topology/wordcount-1-1425844354\?doAsUser=testUSer1
- 2. curl 'http://localhost:8080/api/v1/topology/wordcount-1-1425844354/activate' -X POST -H 'doAsUser:testUSer1'
+ 1. http://ui-daemon-host-name:8080/api/v1/topology/wordcount\?doAsUser=testUSer1
+ 2. curl 'http://localhost:8080/api/v1/topology/wordcount/activate' -X POST -H 'doAsUser:testUSer1'
 ```
 
 ## GET Operations
@@ -226,15 +226,16 @@ Sample response:
 }
 ```
 
-### /api/v1/topology/:id (GET)
+### /api/v1/topology/:name (GET)
 
-Returns topology information and statistics.  Substitute id with topology id.
+Returns topology information and statistics.  Substitute name with topology 
+name.
 
 Request parameters:
 
 |Parameter |Value   |Description  |
 |----------|--------|-------------|
-|id   	   |String (required)| Topology Id  |
+|name      |String (required)| Topology Name  |
 |window    |String. Default value :all-time| Window duration for metrics in seconds|
 |sys       |String. Values 1 or 0. Default value 0| Controls including sys stats part of the response|
 
@@ -291,9 +292,9 @@ Response fields:
 Examples:
 
 ```no-highlight
- 1. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3-1-1402960825
- 2. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3-1-1402960825?sys=1
- 3. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3-1-1402960825?window=600
+ 1. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3
+ 2. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3?sys=1
+ 3. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3?window=600
 ```
 
 Sample response:
@@ -438,13 +439,13 @@ Sample response:
 ```
 
 
-### /api/v1/topology/:id/component/:component (GET)
+### /api/v1/topology/:name/component/:component (GET)
 
 Returns detailed metrics and executor information
 
 |Parameter |Value   |Description  |
 |----------|--------|-------------|
-|id   	   |String (required)| Topology Id  |
+|name      |String (required)| Topology Name |
 |component |String (required)| Component Id |
 |window    |String. Default value :all-time| window duration for metrics in seconds|
 |sys       |String. Values 1 or 0. Default value 0| controls including sys stats part of the response|
@@ -486,9 +487,9 @@ Response fields:
 Examples:
 
 ```no-highlight
-1. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3-1-1402960825/component/spout
-2. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3-1-1402960825/component/spout?sys=1
-3. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3-1-1402960825/component/spout?window=600
+1. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3/component/spout
+2. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3/component/spout?sys=1
+3. http://ui-daemon-host-name:8080/api/v1/topology/WordCount3/component/spout?window=600
 ```
 
 Sample response:
@@ -638,13 +639,13 @@ Sample response:
 
 ## POST Operations
 
-### /api/v1/topology/:id/activate (POST)
+### /api/v1/topology/:name/activate (POST)
 
 Activates a topology.
 
 |Parameter |Value   |Description  |
 |----------|--------|-------------|
-|id   	   |String (required)| Topology Id  |
+|name      |String (required)| Topology Name  |
 
 Sample Response:
 
@@ -653,13 +654,13 @@ Sample Response:
 ```
 
 
-### /api/v1/topology/:id/deactivate (POST)
+### /api/v1/topology/:name/deactivate (POST)
 
 Deactivates a topology.
 
 |Parameter |Value   |Description  |
 |----------|--------|-------------|
-|id   	   |String (required)| Topology Id  |
+|name      |String (required)| Topology Name  |
 
 Sample Response:
 
@@ -668,13 +669,13 @@ Sample Response:
 ```
 
 
-### /api/v1/topology/:id/rebalance/:wait-time (POST)
+### /api/v1/topology/:name/rebalance/:wait-time (POST)
 
 Rebalances a topology.
 
 |Parameter |Value   |Description  |
 |----------|--------|-------------|
-|id   	   |String (required)| Topology Id  |
+|name      |String (required)| Topology Name  |
 |wait-time |String (required)| Wait time before rebalance happens |
 |rebalanceOptions| Json (optional) | topology rebalance options |
 
@@ -691,7 +692,7 @@ Examples:
 curl  -i -b ~/cookiejar.txt -c ~/cookiejar.txt -X POST  
 -H "Content-Type: application/json" 
 -d  '{"rebalanceOptions": {"numWorkers": 2, "executors": { "spout" : "5", "split": 7, "count": 5 }}, "callback":"foo"}' 
-http://localhost:8080/api/v1/topology/wordcount-1-1420308665/rebalance/0
+http://localhost:8080/api/v1/topology/wordcount/rebalance/0
 ```
 
 Sample Response:
@@ -702,13 +703,13 @@ Sample Response:
 
 
 
-### /api/v1/topology/:id/kill/:wait-time (POST)
+### /api/v1/topology/:name/kill/:wait-time (POST)
 
 Kills a topology.
 
 |Parameter |Value   |Description  |
 |----------|--------|-------------|
-|id   	   |String (required)| Topology Id  |
+|name      |String (required)| Topology Name  |
 |wait-time |String (required)| Wait time before rebalance happens |
 
 Caution: Small wait times (0-5 seconds) may increase the probability of triggering the bug reported in
